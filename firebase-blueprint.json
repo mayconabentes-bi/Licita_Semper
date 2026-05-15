@@ -1,0 +1,134 @@
+{
+  "entities": {
+    "Company": {
+      "title": "Company",
+      "description": "Represents a business entity participating in bids.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "cnpj": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "ownerId"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile and role within a company.",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "companyId": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "member"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "companyId", "role"]
+    },
+    "Opportunity": {
+      "title": "Opportunity",
+      "description": "Represents a government bid opportunity.",
+      "type": "object",
+      "properties": {
+        "uasg": { "type": "string", "description": "Agency id code." },
+        "number": { "type": "string", "description": "Bid number." },
+        "agency": { "type": "string" },
+        "object": { "type": "string" },
+        "openingDate": { "type": "string", "format": "date-time" },
+        "value": { "type": "number" },
+        "status": { "type": "string", "enum": ["monitoring", "analysis", "preparation", "won", "lost", "canceled"] },
+        "portal": { "type": "string" },
+        "companyId": { "type": "string" },
+        "creatorId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["number", "agency", "object", "status", "companyId", "creatorId"]
+    },
+    "Document": {
+      "title": "Document",
+      "description": "Company certification or bid-specific document.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "issueDate": { "type": "string", "format": "date-time" },
+        "expiryDate": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" },
+        "status": { "type": "string", "enum": ["valid", "expired", "missing"] },
+        "fileName": { "type": "string" },
+        "companyId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "status", "companyId", "ownerId"]
+    },
+    "Analysis": {
+      "title": "Analysis",
+      "description": "Go/No-Go evaluation for an opportunity.",
+      "type": "object",
+      "properties": {
+        "opportunityId": { "type": "string" },
+        "companyId": { "type": "string" },
+        "cnaeMatch": { "type": "boolean" },
+        "technicalCapacity": { "type": "number" },
+        "estimatedMargin": { "type": "number" },
+        "riskLevel": { "type": "number" },
+        "deadlineFeasibility": { "type": "number" },
+        "technicalScore": { "type": "number" },
+        "competitiveScore": { "type": "number" },
+        "marginScore": { "type": "number" },
+        "finalDecision": { "type": "string", "enum": ["aderente", "fora-do-escopo", "talvez"] },
+        "reason": { "type": "string" },
+        "authorId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["opportunityId", "companyId", "finalDecision", "authorId"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A preparation task for a bid.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "priority": { "type": "string", "enum": ["low", "medium", "high", "urgent"] },
+        "status": { "type": "string", "enum": ["todo", "in_progress", "done"] },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "assignedTo": { "type": "string" },
+        "assignedToName": { "type": "string" },
+        "comments": { "type": "string" },
+        "companyId": { "type": "string" },
+        "opportunityId": { "type": "string" },
+        "creatorId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "priority", "status", "companyId", "opportunityId", "creatorId"]
+    }
+  },
+  "firestore": {
+    "/companies/{companyId}": {
+      "schema": "Company",
+      "description": "Registration of participating companies."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and permissions mapping."
+    },
+    "/opportunities/{opportunityId}": {
+      "schema": "Opportunity",
+      "description": "Collection of monitored bid opportunities."
+    },
+    "/documents/{documentId}": {
+      "schema": "Document",
+      "description": "Company legal and fiscal documents."
+    },
+    "/analysis/{analysisId}": {
+      "schema": "Analysis",
+      "description": "Evaluations for bids."
+    },
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Tasks linked to bids."
+    }
+  }
+}

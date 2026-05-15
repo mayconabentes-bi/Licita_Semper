@@ -1,0 +1,155 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Allow test connection
+    match /test/connection {
+      allow read: if isSignedIn();
+    }
+
+    // 1. Helpers
+    function isSignedIn() { return request.auth != null; }
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function isMemberOfCompany(companyId) {
+      return isSignedIn() && getUserData().companyId == companyId;
+    }
+    function isOwner(data) { return isSignedIn() && data.creatorId == request.auth.uid; }
+    function isDocOwner(data) { return isSignedIn() && data.ownerId == request.auth.uid; }
+    function isAuthor(data) { return isSignedIn() && data.authorId == request.auth.uid; }
+    
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // 2. User & Company Rules
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'email', 'companyId', 'role', 'createdAt'])
+        && data.uid == request.auth.uid
+        && data.displayName is string && data.displayName.size() <= 200
+        && data.email is string && data.email.size() <= 200
+        && isValidId(data.companyId)
+        && data.role in ['admin', 'member']
+        && data.createdAt == request.time;
+    }
+
+    function isValidCompany(data) {
+      return data.keys().hasAll(['name', 'ownerId', 'createdAt'])
+        && data.name is string && data.name.size() <= 200
+        && data.ownerId == request.auth.uid
+        && data.createdAt == request.time;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && userId == request.auth.uid;
+      allow create: if isSignedIn() && userId == request.auth.uid && isValidUser(incoming());
+      allow update: if isSignedIn() && userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role']);
+    }
+
+    match /companies/{companyId} {
+      allow get: if isSignedIn() && isMemberOfCompany(companyId);
+      allow create: if isSignedIn() && isValidId(companyId) && isValidCompany(incoming());
+      allow update: if isSignedIn() && existing().ownerId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'cnpj']);
+    }
+
+    // 3. Opportunity Rules
+    function isValidOpportunity(data) {
+      return data.keys().hasAll(['number', 'agency', 'object', 'status', 'companyId', 'creatorId', 'createdAt', 'updatedAt'])
+        && data.keys().size() <= 13
+        && data.number is string && data.number.size() <= 100
+        && data.agency is string && data.agency.size() <= 200
+        && data.object is string && data.object.size() <= 2000
+        && data.status in ['monitoring', 'analysis', 'preparation', 'won', 'lost', 'canceled']
+        && isValidId(data.companyId)
+        && data.creatorId == request.auth.uid
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    match /opportunities/{opportunityId} {
+      allow create: if isSignedIn() && isValidId(opportunityId) && isValidOpportunity(incoming())
+        && isMemberOfCompany(incoming().companyId);
+      allow get: if isSignedIn() && isMemberOfCompany(existing().companyId);
+      allow list: if isSignedIn() && isMemberOfCompany(existing().companyId);
+      allow update: if isSignedIn() && isMemberOfCompany(existing().companyId)
+        && (isOwner(existing()) || getUserData().role == 'admin')
+        && incoming().creatorId == existing().creatorId
+        && incoming().companyId == existing().companyId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Allow status change and other fields
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'value', 'object'])
+        );
+      allow delete: if isSignedIn() && isMemberOfCompany(existing().companyId) && (isOwner(existing()) || getUserData().role == 'admin');
+    }
+
+    // 4. Document Rules
+    function isValidDocument(data) {
+       return data.keys().hasAll(['type', 'status', 'companyId', 'ownerId', 'createdAt'])
+        && data.type is string && data.type.size() <= 100
+        && data.status in ['valid', 'expired', 'missing']
+        && isValidId(data.companyId)
+        && data.ownerId == request.auth.uid
+        && data.createdAt == request.time;
+    }
+
+    match /documents/{documentId} {
+      allow create: if isSignedIn() && isValidId(documentId) && isValidDocument(incoming())
+        && isMemberOfCompany(incoming().companyId);
+      allow read: if isSignedIn() && isMemberOfCompany(existing().companyId);
+      allow write: if isSignedIn() && isMemberOfCompany(existing().companyId) && (isDocOwner(existing()) || getUserData().role == 'admin');
+    }
+
+    // 5. Analysis Rules
+    function isValidAnalysis(data) {
+      return data.keys().hasAll(['opportunityId', 'companyId', 'finalDecision', 'authorId', 'createdAt'])
+        && isValidId(data.opportunityId)
+        && isValidId(data.companyId)
+        && data.finalDecision in ['go', 'no-go', 'undecided', 'aderente', 'fora-do-escopo', 'talvez']
+        && data.authorId == request.auth.uid
+        && data.createdAt == request.time
+        && exists(/databases/$(database)/documents/opportunities/$(data.opportunityId));
+    }
+
+    match /analysis/{analysisId} {
+      allow create: if isSignedIn() && isValidId(analysisId) && isValidAnalysis(incoming())
+        && isMemberOfCompany(incoming().companyId)
+        && get(/databases/$(database)/documents/opportunities/$(incoming().opportunityId)).data.companyId == incoming().companyId;
+      allow read: if isSignedIn() && isMemberOfCompany(existing().companyId);
+      allow update: if isSignedIn() && isMemberOfCompany(existing().companyId) && (isAuthor(existing()) || getUserData().role == 'admin')
+        && incoming().diff(existing()).affectedKeys().hasOnly(['finalDecision', 'reason', 'technicalScore', 'competitiveScore', 'marginScore', 'cnaeMatch', 'technicalCapacity', 'estimatedMargin', 'riskLevel', 'deadlineFeasibility']);
+      allow delete: if isSignedIn() && isMemberOfCompany(existing().companyId) && (isAuthor(existing()) || getUserData().role == 'admin');
+    }
+
+    // 6. Task Rules
+    function isValidTask(data) {
+      return data.keys().hasAll(['title', 'status', 'priority', 'opportunityId', 'companyId', 'creatorId', 'createdAt'])
+        && data.title is string && data.title.size() <= 200
+        && data.status in ['todo', 'in_progress', 'done']
+        && data.priority in ['low', 'medium', 'high', 'urgent']
+        && isValidId(data.opportunityId)
+        && isValidId(data.companyId)
+        && data.creatorId == request.auth.uid
+        && data.createdAt == request.time;
+    }
+
+    match /tasks/{taskId} {
+      allow create: if isSignedIn() && isValidId(taskId) && isValidTask(incoming())
+        && isMemberOfCompany(incoming().companyId)
+        && exists(/databases/$(database)/documents/opportunities/$(incoming().opportunityId));
+      allow read: if isSignedIn() && isMemberOfCompany(existing().companyId);
+      allow update: if isSignedIn() && isMemberOfCompany(existing().companyId)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'description', 'dueDate', 'assignedTo', 'assignedToName', 'comments', 'title', 'priority']);
+      allow delete: if isSignedIn() && isMemberOfCompany(existing().companyId) && (isOwner(existing()) || getUserData().role == 'admin');
+    }
+  }
+}
